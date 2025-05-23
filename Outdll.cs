@@ -8,6 +8,7 @@ using MonoMod.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace Outdll
@@ -117,10 +118,37 @@ namespace Outdll
                 {
                     Print($"Dumping {assembly.GetName().Name} - {method.Name}");
                     TypeInfo typeInfo = method.DeclaringType.GetTypeInfo();
-                    TypeDefinition tdef = new TypeDefinition(typeInfo.Namespace, typeInfo.Name, (Mono.Cecil.TypeAttributes)(uint)typeInfo.Attributes);
-                    if (!module.Types.Contains(tdef))
+                    List<TypeInfo> superStack = new List<TypeInfo>();
+                    TypeDefinition tdef = null;
+                    
+                    // Build nested types if needed
+                    while (typeInfo != null)
                     {
-                        module.Types.Add(tdef);
+                        superStack.Insert(0, typeInfo);
+                        typeInfo = typeInfo.DeclaringType?.GetTypeInfo();
+                    }
+                    var types = module.Types;
+                    foreach (var item in superStack)
+                    {
+                        TypeDefinition match = types.Where(def => def.Name == item.Name).FirstOrDefault();
+                        if (match != null)
+                        {
+                            tdef = match;
+                        }
+                        else
+                        {
+                            TypeDefinition curr = new TypeDefinition(item.Namespace, item.Name, (Mono.Cecil.TypeAttributes)(uint)item.Attributes);
+                            if (tdef == null)
+                            {
+                                module.Types.Add(curr);
+                            }
+                            else
+                            {
+                                tdef.NestedTypes.Add(curr);
+                            }
+                            tdef = curr;
+                        }
+                        types = tdef.NestedTypes;
                     }
 
                     // Create and repatch as we cannot access MethodBody of a patched method
